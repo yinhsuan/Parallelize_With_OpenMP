@@ -1,4 +1,6 @@
 #include "cg_impl.h"
+#include <omp.h>
+
 //---------------------------------------------------------------------
 // Floaging point arrays here are named as in spec discussion of
 // CG algorithm
@@ -22,6 +24,7 @@ void conj_grad(int colidx[],
     //---------------------------------------------------------------------
     // Initialize the CG algorithm:
     //---------------------------------------------------------------------
+    #pragma omp parallel for
     for (j = 0; j < naa + 1; j++)
     {
         q[j] = 0.0;
@@ -34,6 +37,7 @@ void conj_grad(int colidx[],
     // rho = r.r
     // Now, obtain the norm of r: First, sum squares of r elements locally...
     //---------------------------------------------------------------------
+    #pragma omp parallel for reduction (+:rho)
     for (j = 0; j < lastcol - firstcol + 1; j++)
     {
         rho = rho + r[j] * r[j];
@@ -57,6 +61,9 @@ void conj_grad(int colidx[],
         //       unrolled-by-two version is some 10% faster.
         //       The unrolled-by-8 version below is significantly faster
         //       on the Cray t3d - overall speed of code is 1.5 times faster.
+
+        // Use most of the time => from perf
+        #pragma omp parallel for
         for (j = 0; j < lastrow - firstrow + 1; j++)
         {
             sum = 0.0;
@@ -71,6 +78,7 @@ void conj_grad(int colidx[],
         // Obtain p.q
         //---------------------------------------------------------------------
         d = 0.0;
+        #pragma omp parallel for reduction (+:d)
         for (j = 0; j < lastcol - firstcol + 1; j++)
         {
             d = d + p[j] * q[j];
@@ -91,6 +99,7 @@ void conj_grad(int colidx[],
         // and    r = r - alpha*q
         //---------------------------------------------------------------------
         rho = 0.0;
+        #pragma omp parallel for
         for (j = 0; j < lastcol - firstcol + 1; j++)
         {
             z[j] = z[j] + alpha * p[j];
@@ -101,6 +110,7 @@ void conj_grad(int colidx[],
         // rho = r.r
         // Now, obtain the norm of r: First, sum squares of r elements locally...
         //---------------------------------------------------------------------
+        #pragma omp parallel for reduction (+:rho )
         for (j = 0; j < lastcol - firstcol + 1; j++)
         {
             rho = rho + r[j] * r[j];
@@ -114,6 +124,7 @@ void conj_grad(int colidx[],
         //---------------------------------------------------------------------
         // p = r + beta*p
         //---------------------------------------------------------------------
+        #pragma omp parallel for
         for (j = 0; j < lastcol - firstcol + 1; j++)
         {
             p[j] = r[j] + beta * p[j];

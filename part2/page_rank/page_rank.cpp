@@ -23,17 +23,53 @@ void pageRank(Graph g, double *solution, double damping, double convergence)
 
   int numNodes = num_nodes(g);
   double equal_prob = 1.0 / numNodes;
+  bool converged = false;
+  double *scoreOld;
+  scoreOld = (double*)malloc(sizeof(double) * g->num_nodes);
+
+  #pragma omp parallel for
   for (int i = 0; i < numNodes; ++i)
   {
     solution[i] = equal_prob;
   }
 
-  /*
-     For PP students: Implement the page rank algorithm here.  You
-     are expected to parallelize the algorithm using openMP.  Your
-     solution may need to allocate (and free) temporary arrays.
+  while (!converged) {
+    double noOutboundScore = 0;
+    double globalDiff = 0;
+    double sum = 0;
+    memcpy(scoreOld, solution, g->num_nodes * sizeof(double));
 
-     Basic page rank pseudocode is provided below to get you started:
+    #pragma omp parallel for reduction(+:noOutboundScore)
+    for (int i=0; i<numNodes; i++) {
+      if (outgoing_size(g, i) == 0) {
+        noOutboundScore += damping * scoreOld[i] / numNodes;
+      }
+    }
+
+    #pragma omp parallel for reduction(+:globalDiff)
+    for (int i=0; i<numNodes; i++) {
+      const Vertex* in_start = incoming_begin(g, i); // 進來這個vertex的所有vertex
+      const Vertex* in_end = incoming_end(g, i); // 出去這個vertex的所有end為哪些vertex
+      sum = 0;
+      for (const Vertex* v = in_start; v != in_end; v++){
+        sum += scoreOld[*v] / (double)outgoing_size(g, *v);
+      }
+      sum = (damping * sum) + (1.0 - damping) / numNodes;
+      sum += noOutboundScore;
+      solution[i] = sum;
+      globalDiff += fabs(sum - scoreOld[i]);
+    }
+    converged = (globalDiff < convergence);
+  }
+  delete scoreOld;
+
+
+  /*
+    //  For PP students: Implement the page rank algorithm here.  You
+    //  are expected to parallelize the algorithm using openMP.  Your
+    //  solution may need to allocate (and free) temporary arrays.
+
+    //  Basic page rank pseudocode is provided below to get you started:
 
      // initialization: see example code above
      score_old[vi] = 1/numNodes;
@@ -54,6 +90,5 @@ void pageRank(Graph g, double *solution, double damping, double convergence)
        global_diff = sum over all nodes vi { abs(score_new[vi] - score_old[vi]) };
        converged = (global_diff < convergence)
      }
-
-   */
+    */
 }

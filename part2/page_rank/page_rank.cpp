@@ -28,7 +28,7 @@ void pageRank(Graph g, double *solution, double damping, double convergence)
   scoreOld = (double*)malloc(sizeof(double) * g->num_nodes);
 
   #pragma omp parallel for
-  for (int i = 0; i < numNodes; ++i)
+  for (int i=0; i < numNodes; ++i)
   {
     solution[i] = equal_prob;
   }
@@ -42,22 +42,31 @@ void pageRank(Graph g, double *solution, double damping, double convergence)
     #pragma omp parallel for reduction(+:noOutboundScore)
     for (int i=0; i<numNodes; i++) {
       if (outgoing_size(g, i) == 0) {
-        noOutboundScore += damping * scoreOld[i] / numNodes;
+        noOutboundScore += damping * scoreOld[i] / numNodes; // 不會繼續訪問下一個
       }
     }
 
-    #pragma omp parallel for reduction(+:globalDiff)
+    #pragma omp parallel for reduction(+:sum,globalDiff)
     for (int i=0; i<numNodes; i++) {
       const Vertex* in_start = incoming_begin(g, i); // 進來這個vertex的所有vertex
       const Vertex* in_end = incoming_end(g, i); // 出去這個vertex的所有end為哪些vertex
       sum = 0;
+
+      // Step 1
       for (const Vertex* v = in_start; v != in_end; v++){
-        sum += scoreOld[*v] / (double)outgoing_size(g, *v);
+        sum += scoreOld[*v] / (double)outgoing_size(g, *v); // 會訪問下一個，知道要訪問哪一個
       }
-      sum = (damping * sum) + (1.0 - damping) / numNodes;
+      sum *= damping;
+
+      // Step 2
+      sum += ((1.0 - damping) / numNodes); // 會訪問下一個，用戶隨機瀏覽
+
+      // Step 3
       sum += noOutboundScore;
+
+      // Update score_new
       solution[i] = sum;
-      globalDiff += fabs(sum - scoreOld[i]);
+      globalDiff += fabs(solution[i] - scoreOld[i]);
     }
     converged = (globalDiff < convergence);
   }

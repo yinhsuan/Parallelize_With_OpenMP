@@ -35,9 +35,7 @@ void top_down_step(
 {
     for (int i = 0; i < frontier->count; i++)
     {
-
         int node = frontier->vertices[i];
-
         int start_edge = g->outgoing_starts[node];
         int end_edge = (node == g->num_nodes - 1)
                            ? g->num_edges
@@ -50,9 +48,10 @@ void top_down_step(
 
             if (distances[outgoing] == NOT_VISITED_MARKER)
             {
-                distances[outgoing] = distances[node] + 1;
-                int index = new_frontier->count++;
-                new_frontier->vertices[index] = outgoing;
+                if (__sync_bool_compare_and_swap(distances+outgoing, NOT_VISITED_MARKER, distances[node]+1)) {
+                    int index = __sync_fetch_and_add(&(new_frontier->count), 1);
+                    new_frontier->vertices[index] = outgoing;
+                }
             }
         }
     }

@@ -48,8 +48,8 @@ void pageRank(Graph g, double *solution, double damping, double convergence)
 
     #pragma omp parallel for reduction(+:sum,globalDiff)
     for (int i=0; i<numNodes; i++) {
-      const Vertex* inBegin = incoming_begin(g, i); // 進來這個vertex的所有vertex
-      const Vertex* inEnd = incoming_end(g, i); // 出去這個vertex的所有end為哪些vertex
+      const Vertex* inBegin = incoming_begin(g, i); // 進來這個vertex的所有vertex的begin為哪個vertex
+      const Vertex* inEnd = incoming_end(g, i); // 第一個不進來這個vertex的vertex
       sum = 0;
 
       for (const Vertex* v = inBegin; v != inEnd; v++){

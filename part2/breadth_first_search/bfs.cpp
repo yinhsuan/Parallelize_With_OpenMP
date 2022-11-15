@@ -11,6 +11,8 @@
 
 #define ROOT_NODE_ID 0
 #define NOT_VISITED_MARKER -1
+#define ALPHA 14
+#define BETA 24
 
 void vertex_set_clear(vertex_set *list)
 {
@@ -62,7 +64,7 @@ void top_down_step(
 void bottom_up_step(
     Graph g,
     vertex_set *frontier,
-    vertex_set *pre_frontier,
+    vertex_set *new_frontier,
     int *distances)
 {
     #pragma omp parallel for schedule(static, 1)
@@ -75,10 +77,10 @@ void bottom_up_step(
                             : g->incoming_starts[v+1];
             for (int neighbor=start_edge; neighbor<end_edge; neighbor++) {
                 int incoming = g->incoming_edges[neighbor];
-                if (pre_frontier->vertices[incoming] != NOT_VISITED_MARKER) {
+                if (frontier->vertices[incoming] != NOT_VISITED_MARKER) {
                     distances[node] = distances[incoming] + 1;
-                    int index = __sync_fetch_and_add(&(frontier->count), 1);
-                    frontier->vertices[node] = 1;
+                    int index = __sync_fetch_and_add(&(new_frontier->count), 1);
+                    new_frontier->vertices[node] = 1;
                     break;
                 }
             }
@@ -152,33 +154,33 @@ void bfs_bottom_up(Graph graph, solution *sol)
     vertex_set_init(&list2, graph->num_nodes);
 
     vertex_set *frontier = &list1;
-    vertex_set *pre_frontier = &list2;
+    vertex_set *new_frontier = &list2;
 
     // initialize all nodes to NOT_VISITED
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
 
     // setup frontier with the root node
-    frontier->vertices[frontier->count++] = ROOT_NODE_ID;
+    new_frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
 
+    new_frontier->vertices[ROOT_NODE_ID] = 1;
     frontier->vertices[ROOT_NODE_ID] = 1;
-    pre_frontier->vertices[ROOT_NODE_ID] = 1;
     for (int i = 1; i < graph->num_nodes; i++) {
+        new_frontier->vertices[i] = NOT_VISITED_MARKER;
         frontier->vertices[i] = NOT_VISITED_MARKER;
-        pre_frontier->vertices[i] = NOT_VISITED_MARKER;
     }
-    pre_frontier->count++; // to get into for loop
+    frontier->count++; // to get into for loop
 
-    while (pre_frontier->count != 0)
+    while (frontier->count != 0)
     {
 
 #ifdef VERBOSE
         double start_time = CycleTimer::currentSeconds();
 #endif
 
-        vertex_set_clear(frontier);
-        bottom_up_step(graph, frontier, pre_frontier, sol->distances); // handle one layer of frontier
+        vertex_set_clear(new_frontier);
+        bottom_up_step(graph, frontier, new_frontier, sol->distances); // handle one layer of frontier
 
 #ifdef VERBOSE
         double end_time = CycleTimer::currentSeconds();
@@ -186,9 +188,9 @@ void bfs_bottom_up(Graph graph, solution *sol)
 #endif
 
         // swap pointers
-        vertex_set *tmp = frontier;
-        frontier = pre_frontier;
-        pre_frontier = tmp;
+        vertex_set *tmp = new_frontier;
+        new_frontier = frontier;
+        frontier = tmp;
     }
 }
 

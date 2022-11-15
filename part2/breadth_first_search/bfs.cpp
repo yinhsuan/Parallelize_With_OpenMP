@@ -62,14 +62,12 @@ void top_down_step(
 void bottom_up_step(
     Graph g,
     vertex_set *frontier,
-    int *distances,
-    int &cnt,
-    int frontierId)
+    vertex_set *pre_frontier,
+    int *distances)
 {
-    cnt = 0; // # of vertics in this frontier
     for (int v=0; v<g->num_nodes; v++) {
-        if (distances[v] == NOT_VISITED_MARKER) {
-            int node = frontier->vertices[v];
+        int node = v;
+        if (distances[node] == NOT_VISITED_MARKER) {
             int start_edge = g->incoming_starts[v];
             int end_edge = (v == g->num_nodes-1)
                             ? g->num_edges
@@ -77,11 +75,10 @@ void bottom_up_step(
             for (int neighbor=start_edge; neighbor<end_edge; neighbor++) {
                 int incoming = g->incoming_edges[neighbor];
 
-                if (distances[incoming] == frontierId) {
+                if (pre_frontier->vertices[incoming] != NOT_VISITED_MARKER) {
                     distances[node] = distances[incoming] + 1;
-                    int index = frontier->count++;
-                    frontier->vertices[index] = node;
-                    cnt++;
+                    frontier->count++;
+                    frontier->vertices[node] = 1;
                     break;
                 }
             }
@@ -121,7 +118,6 @@ void bfs_top_down(Graph graph, solution *sol)
 #endif
 
         vertex_set_clear(new_frontier);
-
         top_down_step(graph, frontier, new_frontier, sol->distances);
 
 #ifdef VERBOSE
@@ -151,15 +147,12 @@ void bfs_bottom_up(Graph graph, solution *sol)
     // each step of the BFS process.
 
     vertex_set list1;
-    // vertex_set list2;
+    vertex_set list2;
     vertex_set_init(&list1, graph->num_nodes);
-    // vertex_set_init(&list2, graph->num_nodes);
+    vertex_set_init(&list2, graph->num_nodes);
 
     vertex_set *frontier = &list1;
-    // vertex_set *pre_frontier = &list2;
-
-    int cnt = 1;
-    int frontierId = 1;
+    vertex_set *pre_frontier = &list2;
 
     // initialize all nodes to NOT_VISITED
     for (int i = 0; i < graph->num_nodes; i++)
@@ -169,28 +162,33 @@ void bfs_bottom_up(Graph graph, solution *sol)
     frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
 
-    while (cnt != 0)
+    frontier->vertices[ROOT_NODE_ID] = 1;
+    pre_frontier->vertices[ROOT_NODE_ID] = 1;
+    for (int i = 1; i < graph->num_nodes; i++) {
+        frontier->vertices[i] = NOT_VISITED_MARKER;
+        pre_frontier->vertices[i] = NOT_VISITED_MARKER;
+    }
+    pre_frontier->count++; // to get into for loop
+
+    while (pre_frontier->count != 0)
     {
 
 #ifdef VERBOSE
         double start_time = CycleTimer::currentSeconds();
 #endif
 
-        // vertex_set_clear(pre_frontier);
-
-        bottom_up_step(graph, frontier, sol->distances, cnt, frontierId); // handle one layer of frontier
+        vertex_set_clear(frontier);
+        bottom_up_step(graph, frontier, pre_frontier, sol->distances); // handle one layer of frontier
 
 #ifdef VERBOSE
         double end_time = CycleTimer::currentSeconds();
         printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
 #endif
 
-        frontierId++;
-
         // swap pointers
-        // vertex_set *tmp = frontier;
-        // frontier = pre_frontier;
-        // pre_frontier = tmp;
+        vertex_set *tmp = frontier;
+        frontier = pre_frontier;
+        pre_frontier = tmp;
     }
 }
 

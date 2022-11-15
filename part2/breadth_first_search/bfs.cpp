@@ -65,6 +65,7 @@ void bottom_up_step(
     vertex_set *pre_frontier,
     int *distances)
 {
+    #pragma omp parallel for schedule(static, 1)
     for (int v=0; v<g->num_nodes; v++) {
         int node = v;
         if (distances[node] == NOT_VISITED_MARKER) {
@@ -74,10 +75,9 @@ void bottom_up_step(
                             : g->incoming_starts[v+1];
             for (int neighbor=start_edge; neighbor<end_edge; neighbor++) {
                 int incoming = g->incoming_edges[neighbor];
-
                 if (pre_frontier->vertices[incoming] != NOT_VISITED_MARKER) {
                     distances[node] = distances[incoming] + 1;
-                    frontier->count++;
+                    int index = __sync_fetch_and_add(&(frontier->count), 1);
                     frontier->vertices[node] = 1;
                     break;
                 }

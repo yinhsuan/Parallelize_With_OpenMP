@@ -56,9 +56,6 @@ void top_down_step(
                     int index = __sync_fetch_and_add(&(new_frontier->count), 1);
                     new_frontier->vertices[index] = outgoing;
                     sum += outgoing_size(g, outgoing);
-                    // distances[outgoing] = distances[node] + 1;
-                    // int index = new_frontier->count++;
-                    // new_frontier->vertices[index] = outgoing;
                 }
             }
         }
@@ -74,11 +71,11 @@ void bottom_up_step(
     int *mf)
 {
     int sum = 0;
+    int count = 0;
 
-    #pragma omp parallel for reduction(+:sum) schedule(static, 1)
+    #pragma omp parallel for reduction(+:sum,count) schedule(static, 1)
     for (int v=0; v<g->num_nodes; v++) {
-        int node = v;
-        if (distances[node] == NOT_VISITED_MARKER) {
+        if (distances[v] == NOT_VISITED_MARKER) {
             int start_edge = g->incoming_starts[v];
             int end_edge = (v == g->num_nodes-1)
                             ? g->num_edges
@@ -86,15 +83,16 @@ void bottom_up_step(
             for (int neighbor=start_edge; neighbor<end_edge; neighbor++) {
                 int incoming = g->incoming_edges[neighbor];
                 if (frontier->vertices[incoming] != NOT_VISITED_MARKER) {
-                    distances[node] = distances[incoming] + 1;
-                    int index = __sync_fetch_and_add(&(new_frontier->count), 1);
-                    new_frontier->vertices[node] = 1;
-                    sum += outgoing_size(g, node);
+                    distances[v] = distances[incoming] + 1;
+                    count++;
+                    new_frontier->vertices[v] = 1;
+                    sum += outgoing_size(g, v);
                     break;
                 }
             }
         }
     }
+    new_frontier->count += count;
     *mf = sum;
 }
 
@@ -175,7 +173,7 @@ void bfs_bottom_up(Graph graph, solution *sol)
         sol->distances[i] = NOT_VISITED_MARKER;
 
     // setup frontier with the root node
-    new_frontier->vertices[frontier->count++] = ROOT_NODE_ID;
+    // new_frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
 
     new_frontier->vertices[ROOT_NODE_ID] = 1;
@@ -194,9 +192,6 @@ void bfs_bottom_up(Graph graph, solution *sol)
 #endif
 
         vertex_set_clear(new_frontier);
-        // for (int i = 0; i < graph->num_nodes; i++) {
-        //     new_frontier->vertices[i] = NOT_VISITED_MARKER;
-        // }
         bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf); // handle one layer of frontier
 
 #ifdef VERBOSE
@@ -236,22 +231,16 @@ void bfs_hybrid(Graph graph, solution *sol)
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
 
-    new_frontier->vertices[frontier->count++] = ROOT_NODE_ID;
+    frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
-
-    new_frontier->vertices[ROOT_NODE_ID] = 1;
-    frontier->vertices[ROOT_NODE_ID] = 1;
-    for (int i = 1; i < graph->num_nodes; i++) {
-        new_frontier->vertices[i] = NOT_VISITED_MARKER;
-        frontier->vertices[i] = NOT_VISITED_MARKER;
-    }
-    // frontier->count++;
 
     do {
 
 #ifdef VERBOSE
         double start_time = CycleTimer::currentSeconds();
 #endif
+
+        preCnt = frontier->count;
 
         vertex_set_clear(new_frontier);
         for (int i = 0; i < graph->num_nodes; i++) {
@@ -266,11 +255,9 @@ void bfs_hybrid(Graph graph, solution *sol)
         }
 
         // determine next time mode
-        preCnt = new_frontier->count;
-        isGrowing = (preCnt < frontier->count);
+        isGrowing = (preCnt < new_frontier->count);
         nf = new_frontier->count;
         mu -= mf;
-        // mf = 0;
 
         vertex_set_clear(frontier);
         for (int i = 0; i < graph->num_nodes; i++) {
@@ -281,7 +268,7 @@ void bfs_hybrid(Graph graph, solution *sol)
             mode = false; // top-down -> buttom-up
 
             for (int i=0; i<new_frontier->count; i++) {
-                frontier->vertices[i] = 1;
+                frontier->vertices[new_frontier->vertices[i]] = 1;
                 frontier->count++;
             }
         }
@@ -290,7 +277,6 @@ void bfs_hybrid(Graph graph, solution *sol)
 
             for (int i=0; i<graph->num_nodes; i++) {
                 if (new_frontier->vertices[i] != NOT_VISITED_MARKER) {
-                    printf("%d\n", new_frontier->vertices[i]);
                     frontier->vertices[frontier->count] = i;
                     frontier->count++;
                 }

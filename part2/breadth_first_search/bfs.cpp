@@ -33,9 +33,12 @@ void top_down_step(
     Graph g,
     vertex_set *frontier,
     vertex_set *new_frontier,
-    int *distances)
+    int *distances,
+    int *mf)
 {
-    #pragma omp parallel for schedule(static, 1)
+    int sum = 0;
+
+    #pragma omp parallel for reduction(+:sum) schedule(static, 1)
     for (int i = 0; i < frontier->count; i++)
     {
         int node = frontier->vertices[i]; // 目前在frontier的哪個vertic上
@@ -52,6 +55,7 @@ void top_down_step(
                 if (__sync_bool_compare_and_swap(distances+outgoing, NOT_VISITED_MARKER, distances[node]+1)) {
                     int index = __sync_fetch_and_add(&(new_frontier->count), 1);
                     new_frontier->vertices[index] = outgoing;
+                    sum += outgoing_size(g, outgoing);
                     // distances[outgoing] = distances[node] + 1;
                     // int index = new_frontier->count++;
                     // new_frontier->vertices[index] = outgoing;
@@ -59,15 +63,19 @@ void top_down_step(
             }
         }
     }
+    *mf = sum;
 }
 
 void bottom_up_step(
     Graph g,
     vertex_set *frontier,
     vertex_set *new_frontier,
-    int *distances)
+    int *distances,
+    int *mf)
 {
-    #pragma omp parallel for schedule(static, 1)
+    int sum = 0;
+
+    #pragma omp parallel for reduction(+:sum) schedule(static, 1)
     for (int v=0; v<g->num_nodes; v++) {
         int node = v;
         if (distances[node] == NOT_VISITED_MARKER) {
@@ -81,11 +89,13 @@ void bottom_up_step(
                     distances[node] = distances[incoming] + 1;
                     int index = __sync_fetch_and_add(&(new_frontier->count), 1);
                     new_frontier->vertices[node] = 1;
+                    sum += outgoing_size(g, node);
                     break;
                 }
             }
         }
     }
+    *mf = sum;
 }
 
 
@@ -104,6 +114,8 @@ void bfs_top_down(Graph graph, solution *sol)
     vertex_set *frontier = &list1;
     vertex_set *new_frontier = &list2;
 
+    int mf = 0;
+
     // initialize all nodes to NOT_VISITED
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
@@ -120,7 +132,7 @@ void bfs_top_down(Graph graph, solution *sol)
 #endif
 
         vertex_set_clear(new_frontier);
-        top_down_step(graph, frontier, new_frontier, sol->distances);
+        top_down_step(graph, frontier, new_frontier, sol->distances, &mf);
 
 #ifdef VERBOSE
         double end_time = CycleTimer::currentSeconds();
@@ -156,6 +168,8 @@ void bfs_bottom_up(Graph graph, solution *sol)
     vertex_set *frontier = &list1;
     vertex_set *new_frontier = &list2;
 
+    int mf = 0;
+
     // initialize all nodes to NOT_VISITED
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
@@ -180,7 +194,10 @@ void bfs_bottom_up(Graph graph, solution *sol)
 #endif
 
         vertex_set_clear(new_frontier);
-        bottom_up_step(graph, frontier, new_frontier, sol->distances); // handle one layer of frontier
+        for (int i = 0; i < graph->num_nodes; i++) {
+            new_frontier->vertices[i] = NOT_VISITED_MARKER;
+        }
+        bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf); // handle one layer of frontier
 
 #ifdef VERBOSE
         double end_time = CycleTimer::currentSeconds();
@@ -200,4 +217,99 @@ void bfs_hybrid(Graph graph, solution *sol)
     //
     // You will need to implement the "hybrid" BFS here as
     // described in the handout.
+
+    vertex_set list1;
+    vertex_set list2;
+    vertex_set_init(&list1, graph->num_nodes);
+    vertex_set_init(&list2, graph->num_nodes);
+
+    vertex_set *frontier = &list1;
+    vertex_set *new_frontier = &list2;
+
+    int mf = 0;
+    int nf = 0;
+    int mu = graph->num_edges;
+    bool mode = true;
+    bool isGrowing = true;
+    int preCnt = 0;
+    // int pre_distance = 0;
+
+    for (int i = 0; i < graph->num_nodes; i++)
+        sol->distances[i] = NOT_VISITED_MARKER;
+
+    new_frontier->vertices[frontier->count++] = ROOT_NODE_ID;
+    sol->distances[ROOT_NODE_ID] = 0;
+
+    new_frontier->vertices[ROOT_NODE_ID] = 1;
+    frontier->vertices[ROOT_NODE_ID] = 1;
+    for (int i = 1; i < graph->num_nodes; i++) {
+        new_frontier->vertices[i] = NOT_VISITED_MARKER;
+        frontier->vertices[i] = NOT_VISITED_MARKER;
+    }
+    frontier->count++;
+
+    while (frontier->count != 0)
+    {
+
+#ifdef VERBOSE
+        double start_time = CycleTimer::currentSeconds();
+#endif
+
+        preCnt = new_frontier->count;
+        nf = new_frontier->count;
+        mu -= mf;
+        mf = 0;
+
+        vertex_set_clear(frontier);
+        for (int i = 0; i < graph->num_nodes; i++) {
+            frontier->vertices[i] = NOT_VISITED_MARKER;
+        }
+
+        if (mode & (mf > (float)mu/ALPHA) & isGrowing) {
+            mode = false; // top-down -> buttom-up
+
+            for (int i=0; i<new_frontier->count; i++) {
+                frontier->vertices[i] = 1;
+                frontier->count++;
+            }
+        }
+        else if (!mode & (nf < (float)graph->num_edges/BETA) & !isGrowing) {
+            mode = true;  // buttom-up -> top-down
+
+            for (int i=0; i<graph->num_nodes; i++) {
+                // if (sol->distances[i] == pre_distance) {
+                if (new_frontier->vertices[i] != NOT_VISITED_MARKER) {
+                    frontier->vertices[frontier->count] = i;
+                    frontier->count += 1;
+                }
+            }
+        }
+        else {
+            vertex_set *tmp = new_frontier;
+            new_frontier = frontier;
+            frontier = tmp;
+        }
+
+        vertex_set_clear(new_frontier);
+        for (int i = 0; i < graph->num_nodes; i++) {
+            new_frontier->vertices[i] = NOT_VISITED_MARKER;
+        }
+
+        if (mode) {
+            top_down_step(graph, frontier, new_frontier, sol->distances, &mf);
+        }
+        else {
+            bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf);
+        }
+
+
+#ifdef VERBOSE
+        double end_time = CycleTimer::currentSeconds();
+        printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
+#endif
+
+        isGrowing = (preCnt < frontier->count);
+        // pre_distance++;
+
+    }
 }

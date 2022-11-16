@@ -194,9 +194,9 @@ void bfs_bottom_up(Graph graph, solution *sol)
 #endif
 
         vertex_set_clear(new_frontier);
-        for (int i = 0; i < graph->num_nodes; i++) {
-            new_frontier->vertices[i] = NOT_VISITED_MARKER;
-        }
+        // for (int i = 0; i < graph->num_nodes; i++) {
+        //     new_frontier->vertices[i] = NOT_VISITED_MARKER;
+        // }
         bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf); // handle one layer of frontier
 
 #ifdef VERBOSE
@@ -232,7 +232,6 @@ void bfs_hybrid(Graph graph, solution *sol)
     bool mode = true;
     bool isGrowing = true;
     int preCnt = 0;
-    // int pre_distance = 0;
 
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
@@ -246,19 +245,32 @@ void bfs_hybrid(Graph graph, solution *sol)
         new_frontier->vertices[i] = NOT_VISITED_MARKER;
         frontier->vertices[i] = NOT_VISITED_MARKER;
     }
-    frontier->count++;
+    // frontier->count++;
 
-    while (frontier->count != 0)
-    {
+    do {
 
 #ifdef VERBOSE
         double start_time = CycleTimer::currentSeconds();
 #endif
 
+        vertex_set_clear(new_frontier);
+        for (int i = 0; i < graph->num_nodes; i++) {
+            new_frontier->vertices[i] = NOT_VISITED_MARKER;
+        }
+
+        if (mode) {
+            top_down_step(graph, frontier, new_frontier, sol->distances, &mf);
+        }
+        else {
+            bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf);
+        }
+
+        // determine next time mode
         preCnt = new_frontier->count;
+        isGrowing = (preCnt < frontier->count);
         nf = new_frontier->count;
         mu -= mf;
-        mf = 0;
+        // mf = 0;
 
         vertex_set_clear(frontier);
         for (int i = 0; i < graph->num_nodes; i++) {
@@ -277,10 +289,10 @@ void bfs_hybrid(Graph graph, solution *sol)
             mode = true;  // buttom-up -> top-down
 
             for (int i=0; i<graph->num_nodes; i++) {
-                // if (sol->distances[i] == pre_distance) {
                 if (new_frontier->vertices[i] != NOT_VISITED_MARKER) {
+                    printf("%d\n", new_frontier->vertices[i]);
                     frontier->vertices[frontier->count] = i;
-                    frontier->count += 1;
+                    frontier->count++;
                 }
             }
         }
@@ -290,26 +302,11 @@ void bfs_hybrid(Graph graph, solution *sol)
             frontier = tmp;
         }
 
-        vertex_set_clear(new_frontier);
-        for (int i = 0; i < graph->num_nodes; i++) {
-            new_frontier->vertices[i] = NOT_VISITED_MARKER;
-        }
-
-        if (mode) {
-            top_down_step(graph, frontier, new_frontier, sol->distances, &mf);
-        }
-        else {
-            bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf);
-        }
-
 
 #ifdef VERBOSE
         double end_time = CycleTimer::currentSeconds();
         printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
 #endif
 
-        isGrowing = (preCnt < frontier->count);
-        // pre_distance++;
-
-    }
+    } while (frontier->count != 0);
 }

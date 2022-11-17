@@ -37,23 +37,26 @@ void top_down_step(
     int *mf)
 {
     int sum = 0;
+    int node, start_edge, end_edge;
+    int outgoing;
+    int index;
 
-    #pragma omp parallel for reduction(+:sum) schedule(static, 1)
+    #pragma omp parallel for reduction(+:sum) schedule(static, 1) private(node,start_edge,end_edge,outgoing,index)
     for (int i = 0; i < frontier->count; i++)
     {
-        int node = frontier->vertices[i]; // 目前在frontier的哪個vertic上
-        int start_edge = g->outgoing_starts[node];
-        int end_edge = (node == g->num_nodes - 1)
+        node = frontier->vertices[i]; // 目前在frontier的哪個vertic上
+        start_edge = g->outgoing_starts[node];
+        end_edge = (node == g->num_nodes - 1)
                            ? g->num_edges
                            : g->outgoing_starts[node + 1];
 
         // attempt to add all neighbors to the new frontier
         for (int neighbor = start_edge; neighbor < end_edge; neighbor++)
         {
-            int outgoing = g->outgoing_edges[neighbor];
+            outgoing = g->outgoing_edges[neighbor];
             if(distances[outgoing] == NOT_VISITED_MARKER){
                 if (__sync_bool_compare_and_swap(distances+outgoing, NOT_VISITED_MARKER, distances[node]+1)) {
-                    int index = __sync_fetch_and_add(&(new_frontier->count), 1);
+                    index = __sync_fetch_and_add(&(new_frontier->count), 1);
                     new_frontier->vertices[index] = outgoing;
                     sum += outgoing_size(g, outgoing);
                 }
@@ -72,16 +75,18 @@ void bottom_up_step(
 {
     int sum = 0;
     int count = 0;
+    int start_edge, end_edge;
+    int incoming;
 
-    #pragma omp parallel for reduction(+:sum,count) schedule(static, 1)
+    #pragma omp parallel for reduction(+:sum,count) schedule(static, 1) private(start_edge,end_edge,incoming)
     for (int v=0; v<g->num_nodes; v++) {
         if (distances[v] == NOT_VISITED_MARKER) {
-            int start_edge = g->incoming_starts[v];
-            int end_edge = (v == g->num_nodes-1)
+            start_edge = g->incoming_starts[v];
+            end_edge = (v == g->num_nodes-1)
                             ? g->num_edges
                             : g->incoming_starts[v+1];
             for (int neighbor=start_edge; neighbor<end_edge; neighbor++) {
-                int incoming = g->incoming_edges[neighbor];
+                incoming = g->incoming_edges[neighbor];
                 if (frontier->vertices[incoming] != NOT_VISITED_MARKER) {
                     distances[v] = distances[incoming] + 1;
                     count++;

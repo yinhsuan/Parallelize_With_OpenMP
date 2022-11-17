@@ -34,7 +34,9 @@ void top_down_step(
     vertex_set *frontier,
     vertex_set *new_frontier,
     int *distances,
-    int *mf)
+    int *mf,
+    bool *bitmap,
+    bool *new_bitmap)
 {
     int sum = 0;
     int node, start_edge, end_edge;
@@ -58,6 +60,7 @@ void top_down_step(
                 if (__sync_bool_compare_and_swap(distances+outgoing, NOT_VISITED_MARKER, distances[node]+1)) {
                     index = __sync_fetch_and_add(&(new_frontier->count), 1);
                     new_frontier->vertices[index] = outgoing;
+                    new_bitmap[outgoing] = 1;
                     sum += outgoing_size(g, outgoing);
                 }
             }
@@ -71,7 +74,9 @@ void bottom_up_step(
     vertex_set *frontier,
     vertex_set *new_frontier,
     int *distances,
-    int *mf)
+    int *mf,
+    bool *bitmap,
+    bool *new_bitmap)
 {
     int sum = 0;
     int count = 0;
@@ -87,11 +92,12 @@ void bottom_up_step(
                             : g->incoming_starts[v+1];
             for (int neighbor=start_edge; neighbor<end_edge; neighbor++) {
                 incoming = g->incoming_edges[neighbor];
-                if (frontier->vertices[incoming] != NOT_VISITED_MARKER) {
+                if(bitmap[incoming]){ 
                     distances[v] = distances[incoming] + 1;
-                    count++;
+                    new_bitmap[v] = 1;
                     new_frontier->vertices[v] = 1;
                     sum += outgoing_size(g, v);
+                    count++;
                     break;
                 }
             }
@@ -108,7 +114,6 @@ void bottom_up_step(
 // distance to the root is stored in sol.distances.
 void bfs_top_down(Graph graph, solution *sol)
 {
-
     vertex_set list1;
     vertex_set list2;
     vertex_set_init(&list1, graph->num_nodes);
@@ -118,6 +123,12 @@ void bfs_top_down(Graph graph, solution *sol)
     vertex_set *new_frontier = &list2;
 
     int mf = 0;
+
+    bool *bitmap, *new_bitmap;
+    bitmap = (bool *)calloc(graph->num_nodes, sizeof(bool));
+    new_bitmap = (bool *)calloc(graph->num_nodes, sizeof(bool));
+    bitmap[0] = 1;
+    new_bitmap[0] = 1;
 
     // initialize all nodes to NOT_VISITED
     for (int i = 0; i < graph->num_nodes; i++)
@@ -135,18 +146,23 @@ void bfs_top_down(Graph graph, solution *sol)
 #endif
 
         vertex_set_clear(new_frontier);
-        top_down_step(graph, frontier, new_frontier, sol->distances, &mf);
+        top_down_step(graph, frontier, new_frontier, sol->distances, &mf, bitmap, new_bitmap);
 
 #ifdef VERBOSE
         double end_time = CycleTimer::currentSeconds();
         printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
 #endif
 
-        // swap pointers
+        bool *tmp_b = new_bitmap;
+        new_bitmap = bitmap;
+        bitmap = tmp_b;
+
         vertex_set *tmp = frontier;
         frontier = new_frontier;
         new_frontier = tmp;
     }
+    free(bitmap);
+    free(new_bitmap);
 }
 
 void bfs_bottom_up(Graph graph, solution *sol)
@@ -173,20 +189,17 @@ void bfs_bottom_up(Graph graph, solution *sol)
 
     int mf = 0;
 
+    bool *bitmap, *new_bitmap;
+    bitmap = (bool *)calloc(graph->num_nodes, sizeof(bool));
+    new_bitmap = (bool *)calloc(graph->num_nodes, sizeof(bool));
+    bitmap[0] = 1;
+    new_bitmap[0] = 1;
+
     // initialize all nodes to NOT_VISITED
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
 
-    // setup frontier with the root node
-    // new_frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
-
-    new_frontier->vertices[ROOT_NODE_ID] = 1;
-    frontier->vertices[ROOT_NODE_ID] = 1;
-    for (int i = 1; i < graph->num_nodes; i++) {
-        new_frontier->vertices[i] = NOT_VISITED_MARKER;
-        frontier->vertices[i] = NOT_VISITED_MARKER;
-    }
     frontier->count++; // to get into for loop
 
     while (frontier->count != 0)
@@ -197,18 +210,22 @@ void bfs_bottom_up(Graph graph, solution *sol)
 #endif
 
         vertex_set_clear(new_frontier);
-        bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf); // handle one layer of frontier
+        bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf, bitmap, new_bitmap); // handle one layer of frontier
 
 #ifdef VERBOSE
         double end_time = CycleTimer::currentSeconds();
         printf("frontier=%-10d %.4f sec\n", frontier->count, end_time - start_time);
 #endif
+        bool *tmp_b = new_bitmap;
+        new_bitmap = bitmap;
+        bitmap = tmp_b;
 
-        // swap pointers
-        vertex_set *tmp = new_frontier;
+        vertex_set *tmp_f = new_frontier;
         new_frontier = frontier;
-        frontier = tmp;
+        frontier = tmp_f;
     }
+    free(bitmap);
+    free(new_bitmap);
 }
 
 void bfs_hybrid(Graph graph, solution *sol)
@@ -233,6 +250,12 @@ void bfs_hybrid(Graph graph, solution *sol)
     bool isGrowing = true;
     int preCnt = 0;
 
+    bool *bitmap, *new_bitmap;
+    bitmap = (bool *)calloc(graph->num_nodes, sizeof(bool));
+    new_bitmap = (bool *)calloc(graph->num_nodes, sizeof(bool));
+    bitmap[0] = 1;
+    new_bitmap[0] = 1;
+
     for (int i = 0; i < graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
 
@@ -253,10 +276,10 @@ void bfs_hybrid(Graph graph, solution *sol)
         }
 
         if (mode) {
-            top_down_step(graph, frontier, new_frontier, sol->distances, &mf);
+            top_down_step(graph, frontier, new_frontier, sol->distances, &mf, bitmap, new_bitmap);
         }
         else {
-            bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf);
+            bottom_up_step(graph, frontier, new_frontier, sol->distances, &mf, bitmap, new_bitmap);
         }
 
         // determine next time mode
@@ -288,11 +311,14 @@ void bfs_hybrid(Graph graph, solution *sol)
             }
         }
         else {
-            vertex_set *tmp = new_frontier;
+            vertex_set *tmp_f = new_frontier;
             new_frontier = frontier;
-            frontier = tmp;
+            frontier = tmp_f;
         }
 
+        bool *tmp_b = new_bitmap;
+        new_bitmap = bitmap;
+        bitmap = tmp_b;
 
 #ifdef VERBOSE
         double end_time = CycleTimer::currentSeconds();
@@ -300,4 +326,7 @@ void bfs_hybrid(Graph graph, solution *sol)
 #endif
 
     } while (frontier->count != 0);
+
+    free(bitmap);
+    free(new_bitmap);
 }
